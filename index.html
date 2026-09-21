@@ -53,7 +53,7 @@ const CARD_DEFS = [
   { id: "moko", name: "モコ", title: "拾ってしまう子", stats: [["収集癖", 3], ["紛失率", 3]],
     flavor: "きれいだと思ったものは、とりあえず持ち帰る。大事なものほど、どこかで落としてくる。", code: "どんぐり" },
   { id: "hayato", name: "ハヤト", title: "違和感に気づく少年", stats: [["観察眼", 3], ["危機回避", 2]],
-    flavor: "森の小さな変化に敏感な観察者。歩き、拾い、触れる経験を積み上げていく。", code: "冒険", free: true,
+    flavor: "森の小さな変化に敏感な観察者。歩き、拾い、触れる経験を積み上げていく。", code: "冒険",
     seekFlavor: "苔むした切り株の下、\n小さな鍵が光っているのを見つけた。",
     foundFlavor: "扉の向こうに、一枚のカードが置かれていた。" },
   { id: "karen", name: "カレン", title: "守られすぎた元お嬢様", stats: [["生活力", 1], ["保護欲", 3]],
@@ -126,8 +126,10 @@ function CardBack({ mystery }) {
 function App() {
   const [collected, setCollected] = useState(INITIAL_COLLECTED);
   const [page, setPage] = useState(0);
-  const [view, setView] = useState("holder"); // holder | seek | found | reveal
+  const [view, setView] = useState("holder"); // holder | seek | found | codeEntry
   const [foundId, setFoundId] = useState(null);
+  const [flipped, setFlipped] = useState(false);
+  const [revealed, setRevealed] = useState(false);
   const [detailId, setDetailId] = useState(null);
   const [justAdded, setJustAdded] = useState(null);
   const [showComplete, setShowComplete] = useState(false);
@@ -167,12 +169,25 @@ function App() {
     })();
   }, [collected, loaded]);
 
+  // let the store button fade in only after the flip animation finishes
+  useEffect(() => {
+    if (!flipped) return;
+    const t = setTimeout(() => setRevealed(true), 750);
+    return () => clearTimeout(t);
+  }, [flipped]);
+
   const totalReal = CARD_DEFS.length;
   const collectedCount = collected.length;
   const remainingDefs = CARD_DEFS.filter((c) => !collected.includes(c.id));
   const remainingFreeDefs = remainingDefs.filter((c) => c.free);
   const allFreeFound = remainingFreeDefs.length === 0;
   const allFound = remainingDefs.length === 0;
+  const hasUsedCode = collected.some((id) => {
+    const d = CARD_DEFS.find((c) => c.id === id);
+    return d && !d.free;
+  });
+  const showHintSeek = collectedCount === 0;
+  const showHintCode = collectedCount >= 1 && !hasUsedCode;
 
   const slots = Array.from({ length: PLANNED_TOTAL }).map((_, i) => {
     const def = CARD_DEFS[i];
@@ -189,11 +204,13 @@ function App() {
   }
 
   function openHiddenPage() {
+    setFlipped(false);
+    setRevealed(false);
     setView("found");
   }
 
   function revealCard() {
-    setView("reveal");
+    setFlipped(true);
   }
 
   function openCodeEntry() {
@@ -215,6 +232,8 @@ function App() {
       return;
     }
     setFoundId(match.id);
+    setFlipped(false);
+    setRevealed(false);
     setView("found");
   }
 
@@ -259,13 +278,21 @@ function App() {
           </header>
 
           <div className="topActions">
-            <button className="seekBtn" onClick={startSeek} disabled={allFreeFound}>
-              <KeyIcon size={16} />
-              {allFreeFound ? "森を歩いて見つかる鍵は見つけ終えた" : "森を歩いて鍵を探す"}
-            </button>
-            <button className="codeBtnTop" onClick={openCodeEntry}>
-              🔑 合言葉でカードを解放する
-            </button>
+            <div className={`actionWithHint ${showHintSeek ? "hasHint" : ""}`}>
+              <button className="seekBtn" onClick={startSeek} disabled={allFreeFound}>
+                <KeyIcon size={16} />
+                {allFreeFound ? "森を歩いて見つかる鍵は見つけ終えた" : "森を歩いて鍵を探す"}
+              </button>
+              {showHintSeek && <div className="tutorialHint">まずはここをタップ</div>}
+            </div>
+            <div className={`actionWithHint ${showHintCode ? "hasHint" : ""}`}>
+              <button className="codeBtnTop" onClick={openCodeEntry}>
+                🔑 合言葉でカードを解放する
+              </button>
+              {showHintCode && (
+                <div className="tutorialHint">次は森を歩いて合言葉を見つけてね</div>
+              )}
+            </div>
           </div>
 
           <div className="progressTrack">
@@ -384,28 +411,39 @@ function App() {
         </div>
       )}
 
-      {view === "found" && (
-        <div className="overlay">
-          <div className="seekCard">
-            <div className="foundBackWrap" onClick={revealCard}>
-              <CardBack mystery />
-            </div>
-            <p className="seekText">
-              {(foundDef && foundDef.foundFlavor) || "扉の向こうに、一枚のカードが置かれていた。"}
-            </p>
-            <button className="primaryBtn" onClick={revealCard}>カードをめくる</button>
-          </div>
-        </div>
-      )}
-
-      {view === "reveal" && foundDef && (
+      {view === "found" && foundDef && (
         <div className="overlay">
           <div className="revealCard">
-            <div className="revealGlow" />
-            <CardFace def={foundDef} big />
-            <button className="primaryBtn" onClick={storeCard}>
-              カードホルダーにしまう
-            </button>
+            {flipped && <div className="revealGlow" />}
+            <div className="flipStage" onClick={!flipped ? revealCard : undefined}>
+              <div className={`flipCard ${flipped ? "isFlipped" : ""}`}>
+                <div className="flipFace flipFaceBack">
+                  <CardBack mystery />
+                </div>
+                <div className="flipFace flipFaceFront">
+                  <CardFace def={foundDef} big />
+                </div>
+              </div>
+            </div>
+
+            {!flipped && (
+              <>
+                <p className="seekText">
+                  {foundDef.foundFlavor || "扉の向こうに、一枚のカードが置かれていた。"}
+                </p>
+                <button className="primaryBtn" onClick={revealCard}>カードをめくる</button>
+              </>
+            )}
+
+            {flipped && (
+              <button
+                className={`primaryBtn ${revealed ? "btnIn" : "btnHidden"}`}
+                onClick={storeCard}
+                onTransitionEnd={() => {}}
+              >
+                カードホルダーにしまう
+              </button>
+            )}
           </div>
         </div>
       )}
@@ -665,6 +703,44 @@ const STYLE = `
   gap: 8px;
   margin-bottom: 12px;
 }
+.actionWithHint {
+  position: relative;
+}
+.actionWithHint.hasHint {
+  margin-bottom: 30px;
+}
+.tutorialHint {
+  position: absolute;
+  left: 50%;
+  top: 100%;
+  transform: translateX(-50%);
+  margin-top: 8px;
+  background: #4B5A35;
+  color: #FBF4E4;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 7px 14px;
+  border-radius: 999px;
+  max-width: 240px;
+  text-align: center;
+  z-index: 5;
+  animation: hintBounce 1.4s ease-in-out infinite;
+  box-shadow: 0 4px 10px rgba(0,0,0,0.25);
+}
+.tutorialHint::before {
+  content: "";
+  position: absolute;
+  top: -6px;
+  left: 50%;
+  transform: translateX(-50%);
+  border-left: 6px solid transparent;
+  border-right: 6px solid transparent;
+  border-bottom: 6px solid #4B5A35;
+}
+@keyframes hintBounce {
+  0%, 100% { transform: translateX(-50%) translateY(0); }
+  50% { transform: translateX(-50%) translateY(-4px); }
+}
 .footerActions {
   margin-top: 18px;
   display: flex;
@@ -824,6 +900,39 @@ const STYLE = `
 .cardFaceBig {
   box-shadow: 0 24px 60px rgba(0,0,0,0.5), 0 0 0 3px #C9AE7E;
   border-radius: 16px;
+}
+.flipStage {
+  width: min(88vw, 440px);
+  max-width: 440px;
+  perspective: 1400px;
+}
+.flipCard {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 3/4.2;
+  transform-style: preserve-3d;
+  transition: transform 0.7s cubic-bezier(.3,.15,.15,1);
+}
+.flipCard.isFlipped { transform: rotateY(180deg); }
+.flipFace {
+  position: absolute;
+  inset: 0;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  border-radius: 16px;
+  overflow: hidden;
+}
+.flipFaceBack { transform: rotateY(0deg); cursor: pointer; }
+.flipFaceFront { transform: rotateY(180deg); }
+.primaryBtn.btnHidden {
+  opacity: 0;
+  transform: translateY(6px);
+  pointer-events: none;
+}
+.primaryBtn.btnIn {
+  opacity: 1;
+  transform: translateY(0);
+  transition: opacity 0.45s ease, transform 0.45s ease;
 }
 .revealGlow {
   position: absolute;
